@@ -1,0 +1,9 @@
+[package]
+name = "clean_atp_gobbled_urls"
+version = "0.1.0"
+authors = ["Dr. Christian Geuer-Pollmann <chgeuer@microsoft.com>"]
+edition = "2018"
+
+[dependencies]
+clipboard-win = "4.0.3"
+url = "2.2.1"

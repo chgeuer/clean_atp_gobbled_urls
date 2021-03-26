@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use clipboard_win::{formats, get_clipboard, set_clipboard};
 use std::collections::HashMap;
 use std::{thread, time};

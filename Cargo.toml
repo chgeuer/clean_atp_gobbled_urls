@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 clipboard-win = "4.0.3"
 url = "2.2.1"
+winapi = {version = "0.3", features = ["wincon", "winuser"]}

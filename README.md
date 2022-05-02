@@ -1,6 +1,6 @@
 # Clean up gobbled links in my clipboard
 
-This utility watches my Windows clipboard, and when it finds a redirect URL to the Advanced Thread Protection, which obfuscates the link target, it strips the redirect part away, and replaces it with the 'clean' URL. 
+This utility watches my Windows clipboard, and when it finds a redirect URL to the Advanced Threat Protection, which obfuscates the link target, it strips the redirect part away, and replaces it with the 'clean' URL. 
 
 ## Why
 

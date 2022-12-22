@@ -1,10 +1,16 @@
 [package]
 name = "clean_atp_gobbled_urls"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Dr. Christian Geuer-Pollmann <chgeuer@microsoft.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-clipboard-win = "4.0.3"
-url = "2.2.1"
+clipboard-win = "4.4.2"
+url = "2.3.1"
 winapi = {version = "0.3", features = ["wincon", "winuser"]}
+
+# https://github.com/johnthagen/min-sized-rust
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true

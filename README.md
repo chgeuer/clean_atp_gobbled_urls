@@ -21,3 +21,7 @@ Therefore, I keep this little helper sanitizing my clipboard for me.
 
 > USE AT YOUR OWN RISK!!
 
+```shell
+grep --recursive --include '*.md' --files-with-matches nam06.safelinks.protection.outlook.com 
+```
+

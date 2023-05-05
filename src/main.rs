@@ -20,40 +20,45 @@ fn replace(content: &str) -> Cow<str> {
         .unwrap();
     }
 
-    MARKDOWN_URL.replace_all(content, |c: &Captures| match (c.name("linktext"), c.name("url")) {
-        (Some(linktext), Some(regex_match)) => match Url::parse(&regex_match.as_str()) {
-            Ok(parsed_url) => match parsed_url.host() {
-                Some(Host::Domain(host)) => {
-                    if host.ends_with(".safelinks.protection.outlook.com") {
-                        let hash_query: HashMap<_, _> =
-                            parsed_url.query_pairs().into_owned().collect();
-                        match hash_query.get("url") {
-                            Some(url) => {
-                                format!("[{}]({})", linktext.as_str(), url)
+    MARKDOWN_URL.replace_all(content, |c: &Captures| {
+        match (c.name("linktext"), c.name("url")) {
+            (Some(linktext), Some(regex_match)) => match Url::parse(&regex_match.as_str()) {
+                Ok(parsed_url) => match parsed_url.host() {
+                    Some(Host::Domain(host)) => {
+                        if host.ends_with(".safelinks.protection.outlook.com") {
+                            let hash_query: HashMap<_, _> =
+                                parsed_url.query_pairs().into_owned().collect();
+                            match hash_query.get("url") {
+                                Some(url) => {
+                                    format!("[{}]({})", linktext.as_str(), url)
+                                }
+                                _ => format!("[{}]({})", linktext.as_str(), parsed_url.as_str()),
                             }
-                            _ => format!("[{}]({})", linktext.as_str(), parsed_url.as_str()),
+                        } else {
+                            format!("[{}]({})", linktext.as_str(), regex_match.as_str())
                         }
-                    } else {
-                        format!("[{}]({})", linktext.as_str(), regex_match.as_str())
                     }
-                }
+                    _ => format!("[{}]({})", linktext.as_str(), regex_match.as_str()),
+                },
                 _ => format!("[{}]({})", linktext.as_str(), regex_match.as_str()),
             },
-            _ => format!("[{}]({})", linktext.as_str(), regex_match.as_str()),
-        },
-        _ => unreachable!(),
+            _ => unreachable!(),
+        }
     })
 }
 
+fn run_clipboard_loop() {
+    loop {
+        // grep --recursive --include '*.md' --files-with-matches nam06.safelinks.protection.outlook.com
+        let input: String = get_clipboard(formats::Unicode).expect("get_clipboard");
+        let replaced = replace(input.as_str());
+        set_clipboard(formats::Unicode, replaced).expect("set_clipboard");
+
+        let sec = time::Duration::from_millis(1000);
+        thread::sleep(sec);
+    }
+}
 
 fn main() {
-  loop {
-    // grep --recursive --include '*.md' --files-with-matches nam06.safelinks.protection.outlook.com
-    let input: String = get_clipboard(formats::Unicode).expect("get_clipboard");
-    let replaced = replace(input.as_str());
-    set_clipboard(formats::Unicode, replaced).expect("set_clipboard");
-
-    let sec = time::Duration::from_millis(1000);
-    thread::sleep(sec);
-  }
+    run_clipboard_loop()
 }

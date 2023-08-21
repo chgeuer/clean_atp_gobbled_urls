@@ -1,6 +1,9 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
+#[allow(dead_code)]
 
 use clipboard_win::{formats, get_clipboard, set_clipboard};
+extern crate glob;
+use glob::glob;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 use std::borrow::Cow;
@@ -54,11 +57,24 @@ fn run_clipboard_loop() {
         let replaced = replace(input.as_str());
         set_clipboard(formats::Unicode, replaced).expect("set_clipboard");
 
-        let sec = time::Duration::from_millis(1000);
-        thread::sleep(sec);
+        thread::sleep(time::Duration::from_millis(1000));
+    }
+}
+
+fn recurse() {
+    println!("Recurse");
+
+    for entry in glob("**/*.md").expect("Failed to read glob pattern") {
+        match entry {
+            Ok(path) => println!("found: {:?}", path.display()),
+            Err(e) => println!("error: {:?}", e),
+        }
     }
 }
 
 fn main() {
+    recurse();
+    println!("Recurse ended");
+
     run_clipboard_loop()
 }

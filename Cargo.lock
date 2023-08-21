@@ -16,6 +16,7 @@ name = "clean_atp_gobbled_urls"
 version = "0.1.1"
 dependencies = [
  "clipboard-win",
+ "glob",
  "lazy_static",
  "regex",
  "url",
@@ -51,6 +52,12 @@ checksum = "a9c384f161156f5260c24a097c56119f9be8c798586aecc13afbcbe7b7e26bf8"
 dependencies = [
  "percent-encoding",
 ]
+
+[[package]]
+name = "glob"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "idna"

@@ -1,13 +1,13 @@
 use clipboard_win::{formats, get_clipboard, set_clipboard};
+use ctrlc;
 use glob::glob;
 use lazy_static::lazy_static;
+use log::{error, warn};
 use regex::{Captures, Regex};
 use std::borrow::Cow;
 use std::io;
 use std::{thread, time};
 use url::{Host, Url};
-use ctrlc;
-use log::{error, info, warn};
 
 type ClipboardResult<T> = Result<T, io::Error>;
 
@@ -24,7 +24,11 @@ impl Default for Config {
         Self {
             check_interval: time::Duration::from_millis(1000),
             max_backoff: time::Duration::from_secs(30),
-            domains_to_unwrap: vec!["safelinks.protection.outlook.com".to_string()],
+            max_retries: 3,
+            domains_to_unwrap: vec![
+                "safelinks.protection.outlook.com".to_string(),
+                "nam.safelink.emails.azure.net".to_string(),
+            ],
         }
     }
 }
@@ -47,50 +51,64 @@ fn is_valid_content(content: &str) -> bool {
 }
 
 fn extract_original_url(url: &Url) -> Option<String> {
-    url.query_pairs()
-        .find(|(key, _)| key == "url")
-        .map(|(_, value)| value.into_owned())
+    if url
+        .host_str()?
+        .ends_with("safelinks.protection.outlook.com")
+    {
+        url.query_pairs()
+            .find(|(key, _)| key == "url")
+            .map(|(_, value)| value.into_owned())
+    } else if url.host_str()?.ends_with("safelink.emails.azure.net") {
+        url.query_pairs()
+            .find(|(key, _)| key == "destination")
+            .map(|(_, value)| value.into_owned())
+    } else {
+        None
+    }
 }
 
 fn replace<'a>(content: &'a str, config: &Config) -> Cow<'a, str> {
     lazy_static! {
-        static ref MARKDOWN_URL: Regex = Regex::new(
-            r"(?x)
-            \[(?P<linktext>.*?)\]\((?P<url>http.*?)\)     # Some markdown link
-            "
-        )
-        .unwrap();
+        static ref MARKDOWN_LINK: Regex = Regex::new(r"(?x)\[(?P<linktext>.*?)\]\((?P<url>http.*?)\)").unwrap();
+        static ref PLAIN_URL: Regex = Regex::new(r"(?x)(?P<url>https?://[^\s)]+)").unwrap();
     }
-
-    MARKDOWN_URL.replace_all(content, |c: &Captures| {
-        match (c.name("linktext"), c.name("url")) {
-            (Some(linktext), Some(regex_match)) => {
-                let url_str = regex_match.as_str();
-                if !is_valid_url(url_str) {
-                    return format!("[{}]({})", linktext.as_str(), url_str);
-                }
-
-                match Url::parse(url_str) {
-                    Ok(parsed_url) => match parsed_url.host() {
-                        Some(Host::Domain(host)) => {
-                            if config.domains_to_unwrap.iter().any(|d| host.ends_with(d)) {
-                                match extract_original_url(&parsed_url) {
-                                    Some(url) => format!("[{}]({})", linktext.as_str(), url),
-                                    None => format!("[{}]({})", linktext.as_str(), url_str),
-                                }
-                            } else {
-                                format!("[{}]({})", linktext.as_str(), url_str)
-                            }
-                        }
-                        _ => format!("[{}]({})", linktext.as_str(), url_str),
-                    },
-                    Err(_) => format!("[{}]({})", linktext.as_str(), url_str),
-                }
-            }
-            _ => unreachable!(),
+ 
+    let process_url = |url_str: &str, linktext: Option<&str>| -> String {
+        if !is_valid_url(url_str) {
+            return url_str.to_string();
         }
-    })
-}
+ 
+        match Url::parse(url_str) {
+            Ok(parsed_url) => {
+                if let Some(Host::Domain(host)) = parsed_url.host() {
+                    if config.domains_to_unwrap.iter().any(|d| host.ends_with(d)) {
+                        if let Some(url) = extract_original_url(&parsed_url) {
+                            return match linktext {
+                                Some(text) => format!("[{}]({})", text, url),
+                                None => url
+                            };
+                        }
+                    }
+                }
+                url_str.to_string()
+            }
+            Err(_) => url_str.to_string()
+        }
+    };
+ 
+    let intermediate = MARKDOWN_LINK.replace_all(content, |c: &Captures| {
+        let url = c.name("url").unwrap().as_str();
+        let linktext = c.name("linktext").map(|m| m.as_str());
+        process_url(url, linktext)
+    }).into_owned();
+ 
+    let final_result = PLAIN_URL.replace_all(&intermediate, |c: &Captures| {
+        let url = c.name("url").unwrap().as_str();
+        process_url(url, None)
+    }).into_owned();
+ 
+    Cow::Owned(final_result)
+ }
 
 fn run_clipboard_loop(config: &Config) {
     let mut backoff = config.check_interval;
@@ -116,7 +134,10 @@ fn run_clipboard_loop(config: &Config) {
                     error!("Max retries exceeded, exiting");
                     std::process::exit(1);
                 }
-                warn!("Clipboard error (attempt {}/{}): {}", retry_count, config.max_retries, e);
+                warn!(
+                    "Clipboard error (attempt {}/{}): {}",
+                    retry_count, config.max_retries, e
+                );
                 backoff = (backoff * 2).min(config.max_backoff);
             }
             _ => {}
@@ -145,7 +166,8 @@ fn main() {
     ctrlc::set_handler(move || {
         println!("\nCleaning up...");
         std::process::exit(0);
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     if let Ok(files) = recurse() {
         println!("Found {} markdown files", files.len());
@@ -159,8 +181,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_url_extraction() {
+    fn test_outlook_url_extraction() {
         let url = Url::parse("https://outlook.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com&data=...").unwrap();
-        assert_eq!(extract_original_url(&url), Some("https://example.com".to_string()));
+        assert_eq!(
+            extract_original_url(&url),
+            Some("https://example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_azure_url_extraction() {
+        let url = Url::parse("https://nam.safelink.emails.azure.net/redirect/?destination=https%3A%2F%2Fazuremsregistration.microsoft.com").unwrap();
+        assert_eq!(
+            extract_original_url(&url),
+            Some("https://azuremsregistration.microsoft.com".to_string())
+        );
     }
 }

@@ -16,6 +16,9 @@ url = "2.3.1"
 clipboard-win = "4.4.2"
 winapi = {version = "0.3", features = ["wincon", "winuser"]}
 glob = "0.3.1"
+ctrlc = "3.2"
+log = "0.4"
+env_logger = "0.9"
 
 # https://github.com/johnthagen/min-sized-rust
 [profile.release]

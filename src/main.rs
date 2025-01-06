@@ -6,6 +6,8 @@ use std::borrow::Cow;
 use std::io;
 use std::{thread, time};
 use url::{Host, Url};
+use ctrlc;
+use log::{error, info, warn};
 
 type ClipboardResult<T> = Result<T, io::Error>;
 
@@ -13,6 +15,7 @@ type ClipboardResult<T> = Result<T, io::Error>;
 struct Config {
     check_interval: time::Duration,
     max_backoff: time::Duration,
+    max_retries: u32,
     domains_to_unwrap: Vec<String>,
 }
 
@@ -37,6 +40,10 @@ fn set_clipboard_content(content: &str) -> ClipboardResult<()> {
 
 fn is_valid_url(url: &str) -> bool {
     Url::parse(url).is_ok()
+}
+
+fn is_valid_content(content: &str) -> bool {
+    !content.trim().is_empty() && content.len() < 1_000_000
 }
 
 fn extract_original_url(url: &Url) -> Option<String> {
@@ -88,28 +95,31 @@ fn replace<'a>(content: &'a str, config: &Config) -> Cow<'a, str> {
 fn run_clipboard_loop(config: &Config) {
     let mut backoff = config.check_interval;
     let mut last_content = String::new();
+    let mut retry_count = 0;
 
     loop {
         match get_clipboard_content() {
-            Ok(input) => {
-                if input != last_content {
-                    let replaced = replace(&input, config);
-                    if let Err(e) = set_clipboard_content(&replaced) {
-                        eprintln!("Clipboard write error: {:?}", e);
-                        backoff = (backoff * 2).min(config.max_backoff);
-                    } else {
-                        last_content = input;
-                        backoff = config.check_interval;
-                    }
-                }
-            }
-            Err(e) => {
-                if !e.to_string().contains("1168") {
-                    // Skip empty clipboard errors
-                    eprintln!("Clipboard read error: {:?}", e);
+            Ok(input) if is_valid_content(&input) && input != last_content => {
+                retry_count = 0;
+                let replaced = replace(&input, config);
+                if let Err(e) = set_clipboard_content(&replaced) {
+                    error!("Clipboard write error: {}", e);
                     backoff = (backoff * 2).min(config.max_backoff);
+                } else {
+                    last_content = input;
+                    backoff = config.check_interval;
                 }
             }
+            Err(e) if !e.to_string().contains("1168") => {
+                retry_count += 1;
+                if retry_count > config.max_retries {
+                    error!("Max retries exceeded, exiting");
+                    std::process::exit(1);
+                }
+                warn!("Clipboard error (attempt {}/{}): {}", retry_count, config.max_retries, e);
+                backoff = (backoff * 2).min(config.max_backoff);
+            }
+            _ => {}
         }
         thread::sleep(backoff);
     }
@@ -132,9 +142,25 @@ fn recurse() -> Result<Vec<String>, glob::PatternError> {
 fn main() {
     let config = Config::default();
 
+    ctrlc::set_handler(move || {
+        println!("\nCleaning up...");
+        std::process::exit(0);
+    }).expect("Error setting Ctrl-C handler");
+
     if let Ok(files) = recurse() {
         println!("Found {} markdown files", files.len());
     }
 
     run_clipboard_loop(&config);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_extraction() {
+        let url = Url::parse("https://outlook.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com&data=...").unwrap();
+        assert_eq!(extract_original_url(&url), Some("https://example.com".to_string()));
+    }
 }

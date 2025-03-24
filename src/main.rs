@@ -69,15 +69,16 @@ fn extract_original_url(url: &Url) -> Option<String> {
 
 fn replace<'a>(content: &'a str, config: &Config) -> Cow<'a, str> {
     lazy_static! {
-        static ref MARKDOWN_LINK: Regex = Regex::new(r"(?x)\[(?P<linktext>.*?)\]\((?P<url>http.*?)\)").unwrap();
+        static ref MARKDOWN_LINK: Regex =
+            Regex::new(r"(?x)\[(?P<linktext>.*?)\]\((?P<url>http.*?)\)").unwrap();
         static ref PLAIN_URL: Regex = Regex::new(r"(?x)(?P<url>https?://[^\s)]+)").unwrap();
     }
- 
+
     let process_url = |url_str: &str, linktext: Option<&str>| -> String {
         if !is_valid_url(url_str) {
             return url_str.to_string();
         }
- 
+
         match Url::parse(url_str) {
             Ok(parsed_url) => {
                 if let Some(Host::Domain(host)) = parsed_url.host() {
@@ -85,30 +86,34 @@ fn replace<'a>(content: &'a str, config: &Config) -> Cow<'a, str> {
                         if let Some(url) = extract_original_url(&parsed_url) {
                             return match linktext {
                                 Some(text) => format!("[{}]({})", text, url),
-                                None => url
+                                None => url,
                             };
                         }
                     }
                 }
                 url_str.to_string()
             }
-            Err(_) => url_str.to_string()
+            Err(_) => url_str.to_string(),
         }
     };
- 
-    let intermediate = MARKDOWN_LINK.replace_all(content, |c: &Captures| {
-        let url = c.name("url").unwrap().as_str();
-        let linktext = c.name("linktext").map(|m| m.as_str());
-        process_url(url, linktext)
-    }).into_owned();
- 
-    let final_result = PLAIN_URL.replace_all(&intermediate, |c: &Captures| {
-        let url = c.name("url").unwrap().as_str();
-        process_url(url, None)
-    }).into_owned();
- 
+
+    let intermediate = MARKDOWN_LINK
+        .replace_all(content, |c: &Captures| {
+            let url = c.name("url").unwrap().as_str();
+            let linktext = c.name("linktext").map(|m| m.as_str());
+            process_url(url, linktext)
+        })
+        .into_owned();
+
+    let final_result = PLAIN_URL
+        .replace_all(&intermediate, |c: &Captures| {
+            let url = c.name("url").unwrap().as_str();
+            process_url(url, None)
+        })
+        .into_owned();
+
     Cow::Owned(final_result)
- }
+}
 
 fn run_clipboard_loop(config: &Config) {
     let mut backoff = config.check_interval;
